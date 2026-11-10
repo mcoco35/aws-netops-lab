@@ -1,0 +1,79 @@
+name: terraform
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt-validate:
+    name: fmt and validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.17.1
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -recursive -check -diff
+
+      - name: terraform init
+        working-directory: envs/lab
+        run: terraform init -backend=false -input=false -lockfile=readonly
+
+      - name: terraform validate
+        working-directory: envs/lab
+        run: terraform validate
+
+      - name: terraform test
+        working-directory: envs/lab
+        run: terraform test
+
+  tflint:
+    name: tflint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: v0.66.0
+
+      - name: Init TFLint plugins
+        run: tflint --init --config "${{ github.workspace }}/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run TFLint
+        run: tflint --recursive --config "${{ github.workspace }}/.tflint.hcl" --format compact
+
+  checkov:
+    name: checkov
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Checkov
+        run: pip install "checkov==3.4.3"
+
+      - name: Run Checkov
+        run: checkov -d . --framework terraform --compact --download-external-modules false
